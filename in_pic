@@ -1,0 +1,169 @@
+#!/bin/python3
+
+# JPEG bytes start with D8 FF and end with FF D9
+# D8 FF and FF D9 are 2 bytes each
+# TODO: add support for png file
+# probably will work with this new technique idk try it
+
+from sys import stderr, stdout
+import argparse
+
+EOF = ".eof.txt"
+
+def is_jpg(
+    img: str,
+) -> dict:
+    """Check if file given is actually a jpg file and
+    also return the index of start jpg and end of jpg file
+
+    Args:
+        img (str): path to jpg img file
+
+    Returns:
+        return dict
+    """
+    with open(img, "rb") as f:
+        img_bytes = f.read()
+
+    start_with = img_bytes.index(bytes.fromhex("D8FF"))
+    end_with = img_bytes.index(bytes.fromhex("FFD9"))
+
+    if start_with and end_with:
+        return {
+            "valid": True,
+            "start": start_with,
+        }
+    return {"valid": False}
+
+def _set_eof(file: str) -> None:
+    f = open(file, "rb")
+    f.read()
+    eof = open(EOF, "w")
+    eof.write(str(f.tell()))
+    f.close()
+
+def _get_eof() -> int:
+    return int(open(EOF, "r").read().strip())
+
+def _backup_jpg(img_dest: str) -> None:
+    with open(img_dest, "rb") as f:
+        with open(f"old_{img_dest}", "wb") as ff:
+            ff.write(f.read())
+
+
+def file_in_jpg(img_dest: str, file_src: str, backup: bool = False) -> bool:
+    """Insert file in jpg file
+
+    Args:
+        img_dest (str): path to jpg file
+        file (str): path to file that you want to insert
+        backup (bool): if True, a backup of img_dest will be made with the name old_{img_dest}. Defaults to False
+
+    Returns:
+        bool: Status of operation, True for success False for failed
+    """
+
+    _set_eof(img_dest)
+    jpg = is_jpg(img_dest)
+    if jpg["valid"]:
+        if backup:
+            _backup_jpg(img_dest)
+        with open(img_dest, "ab") as f1:
+            with open(file_src, "rb") as f2:
+                f1.write(f2.read())
+        return True
+
+    return False
+
+
+def byte_in_jpg(img_dest: str, data: bytes) -> bool:
+    """Insert any data in jpg file
+
+    Args:
+        img_dest (str): path to img_dest file
+        data (bytes): data that you want to insert
+
+    Returns:
+        bool: Status of operation, True for success False for failed
+    """
+    jpg = is_jpg(img_dest)
+    if type(data) != bytes:
+        return False
+
+    if jpg["valid"]:
+        with open(img_dest, "ab") as f:
+            f.seek(jpg["eof"])
+            f.write(data)
+            return True
+
+    return False
+
+# BUG: somehow doesnt fucking extract shit
+def get_out_jpg(img: str, filename: str = None) -> bool:
+    """Get hidden data out of jpg
+
+    Args:
+        img (str): path to jpg file with hidden data
+        filename (str, optional): file to write data to e.g photo.png (with ext please)
+        if filename is not specified, data will print to stdout. Defaults to None.
+
+    Returns:
+        bool: Status of operation, True for success False for failed
+    """
+    jpg = is_jpg(img)
+    with open(img, "rb") as f:
+        f.seek(_get_eof())
+        byte = f.read()
+
+    if not filename:
+        stdout.buffer.write(byte)
+        return True
+
+    if jpg["valid"]:
+        with open(filename, "wb") as f:
+            f.write(byte)
+        return True
+
+    return False
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="in_pic",
+        description="Hide any file inside picture (currently only support .jpg file)",
+    )
+
+    parser.add_argument(
+        "-o",
+        "--out",
+        help="Extract data hidden in picture, if file-dest is empty, the data will be write out to stdout",
+        action="store_true",
+    )
+    parser.add_argument(
+        "file_src",
+        help="File source",
+        metavar="file-src",
+    )
+    parser.add_argument(
+        "file_dest",
+        help="File destination",
+        metavar="file-dest",
+        nargs="?",
+    )
+    args = parser.parse_args()
+    if not args.file_dest and not args.out:
+        stderr.write("[ERROR]: file-src is required when --out is not used")
+    elif args.out:
+        status = get_out_jpg(img=args.file_src, filename=args.file_dest)
+        if not status:
+            stderr.write("[ERROR]: Failed Operation")
+    else:
+        status = file_in_jpg(args.file_dest, args.file_src, True)
+        if not status:
+            stderr.write("[ERROR]: Failed Operation")
+        else:
+            stdout.write("[INFO]: Succes!")
+
+
+if __name__ == "__main__":
+    main()
